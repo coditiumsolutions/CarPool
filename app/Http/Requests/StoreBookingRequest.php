@@ -2,10 +2,14 @@
 
 namespace App\Http\Requests;
 
-use Illuminate\Foundation\Http\FormRequest;
 
-class StoreBookingRequest extends FormRequest
+class StoreBookingRequest extends ApiFormRequest
 {
+    protected function authorizationMessage(): string
+    {
+        return 'Only passenger accounts can book rides. Switch your account type to both in your profile.';
+    }
+
     public function authorize(): bool
     {
         return (bool) $this->user()?->isPassenger();

@@ -3,13 +3,14 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Models\RideOffer;
+use App\Services\BookingPresenter;
 use App\Services\BookingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class RideOfferController extends ApiController
 {
-    public function __construct(private readonly BookingService $bookings)
+    public function __construct(private readonly BookingService $bookings, private readonly BookingPresenter $presenter)
     {
     }
 
@@ -18,7 +19,7 @@ class RideOfferController extends ApiController
     {
         $booking = $this->bookings->acceptOffer($request->user(), $rideOffer->id);
 
-        return $this->created($booking, 'Offer accepted and booking created.');
+        return $this->created($this->presenter->present($booking, $request->user()), 'Offer accepted and booking created.');
     }
 
     public function reject(Request $request, RideOffer $rideOffer): JsonResponse

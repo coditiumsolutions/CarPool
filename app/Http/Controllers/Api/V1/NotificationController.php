@@ -38,4 +38,12 @@ class NotificationController extends ApiController
 
         return $this->ok(['updated' => $count], 'All notifications marked as read.');
     }
+
+    public function destroy(Request $request, Notification $notification): JsonResponse
+    {
+        $notification->user_id === $request->user()->id || $this->deny('Not your notification.');
+        $notification->delete();
+
+        return $this->ok(null, 'Notification deleted.');
+    }
 }

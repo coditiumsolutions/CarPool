@@ -4,19 +4,24 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Requests\StoreRideRequest;
 use App\Models\Ride;
+use App\Services\BookingPresenter;
 use App\Services\RideService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class RideController extends ApiController
 {
-    private const WITH = ['driver:id,name,gender,profile_image,is_verified', 'vehicle:id,vehicle_type,make,model,color,model_year,registration_no', 'fromCity:id,city_name', 'toCity:id,city_name', 'stops'];
+    private const VEHICLE = 'vehicle:id,vehicle_type,make,model,color,model_year,registration_no,total_seats';
 
-    public function __construct(private readonly RideService $rides)
+    public function __construct(private readonly RideService $rides, private readonly BookingPresenter $presenter)
     {
     }
 
-    /** Passenger search: GET /rides?from_city_id=&to_city_id=&date=&seats=&ride_type=&max_price= */
+    /**
+     * Passenger search. Filters: ride_type, from_city_id, to_city_id, date, seats, max_price,
+     * from_location / to_location (partial, case-insensitive), departure_after (HH:MM),
+     * sort = earliest (default) | price | rating.
+     */
     public function index(Request $request): JsonResponse
     {
         $filters = $request->validate([
@@ -26,6 +31,10 @@ class RideController extends ApiController
             'date' => ['nullable', 'date'],
             'seats' => ['nullable', 'integer', 'min:1'],
             'max_price' => ['nullable', 'numeric'],
+            'from_location' => ['nullable', 'string', 'max:100'],
+            'to_location' => ['nullable', 'string', 'max:100'],
+            'departure_after' => ['nullable', 'date_format:H:i'],
+            'sort' => ['nullable', 'in:earliest,price,rating'],
         ]);
 
         return $this->paginated($this->rides->search($filters)->paginate($this->perPage()));
@@ -33,7 +42,10 @@ class RideController extends ApiController
 
     public function show(Ride $ride): JsonResponse
     {
-        return $this->ok($ride->load(self::WITH));
+        return $this->ok($ride->load([
+            'driver' => fn ($q) => $q->publicProfile(),
+            self::VEHICLE, 'fromCity:id,city_name', 'toCity:id,city_name', 'stops',
+        ]));
     }
 
     /** Driver's own rides. */
@@ -51,12 +63,15 @@ class RideController extends ApiController
         return $this->created($this->rides->create($request->user(), $request->validated()), 'Ride published.');
     }
 
-    /** Bookings on one of the driver's rides. */
+    /** Bookings on one of the driver's rides (passenger phone shown once confirmed). */
     public function bookings(Request $request, Ride $ride): JsonResponse
     {
         ($ride->driver_id === $request->user()->id || $request->user()->isAdmin()) || $this->deny('This is not your ride.');
 
-        return $this->ok($ride->bookings()->with(['passenger:id,name,phone,gender', 'passengers'])->get());
+        $bookings = $ride->bookings()->with(['passenger' => fn ($q) => $q->passengerProfile(), 'passengers'])->get();
+        $this->presenter->decorate($bookings, $request->user(), true);
+
+        return $this->ok($bookings);
     }
 
     public function cancel(Request $request, Ride $ride): JsonResponse

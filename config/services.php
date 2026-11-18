@@ -14,6 +14,11 @@ return [
     |
     */
 
+    // Firebase Cloud Messaging: path to the service-account JSON (kept outside git), e.g. storage/app/firebase.json
+    'fcm' => [
+        'credentials' => env('FCM_CREDENTIALS'),
+    ],
+
     'postmark' => [
         'key' => env('POSTMARK_API_KEY'),
     ],

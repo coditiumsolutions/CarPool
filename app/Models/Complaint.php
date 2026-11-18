@@ -9,7 +9,12 @@ class Complaint extends Model
 {
     protected $table = 'complaints';
 
-    protected $fillable = ['booking_id', 'user_id', 'subject', 'description', 'complaint_status'];
+    protected $fillable = ['booking_id', 'user_id', 'subject', 'description', 'complaint_status', 'category'];
+
+    /** complaints.complaint_status values. */
+    public const STATUSES = ['open', 'in_progress', 'resolved', 'rejected'];
+
+    public const CATEGORIES = ['payment', 'driver_behavior', 'passenger_behavior', 'safety', 'vehicle', 'app_issue', 'other'];
 
     public function booking(): BelongsTo
     {

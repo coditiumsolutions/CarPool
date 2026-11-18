@@ -2,11 +2,15 @@
 
 namespace App\Http\Requests;
 
-use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
-class StoreVehicleRequest extends FormRequest
+class StoreVehicleRequest extends ApiFormRequest
 {
+    protected function authorizationMessage(): string
+    {
+        return 'Only driver accounts can add vehicles. Switch your account type to both in your profile.';
+    }
+
     public function authorize(): bool
     {
         return (bool) $this->user()?->isDriver();

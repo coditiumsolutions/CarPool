@@ -11,7 +11,7 @@ class Notification extends Model
 
     protected $table = 'notifications';
 
-    protected $fillable = ['user_id', 'title', 'message', 'notification_type', 'is_read'];
+    protected $fillable = ['user_id', 'title', 'message', 'notification_type', 'is_read', 'booking_id', 'ride_id', 'request_id', 'offer_id'];
 
     protected function casts(): array
     {

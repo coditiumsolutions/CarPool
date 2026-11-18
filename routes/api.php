@@ -4,7 +4,13 @@ use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\BookingController;
 use App\Http\Controllers\Api\V1\CityController;
 use App\Http\Controllers\Api\V1\ComplaintController;
+use App\Http\Controllers\Api\V1\DeviceTokenController;
+use App\Http\Controllers\Api\V1\DocumentController;
 use App\Http\Controllers\Api\V1\HealthController;
+use App\Http\Controllers\Api\V1\HomeController;
+use App\Http\Controllers\Api\V1\PasswordController;
+use App\Http\Controllers\Api\V1\PlaceController;
+use App\Http\Controllers\Api\V1\VehicleDocumentController;
 use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\PaymentController;
 use App\Http\Controllers\Api\V1\ReviewController;
@@ -21,6 +27,8 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
     Route::get('/cities', [CityController::class, 'index'])->name('cities');
     Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:10,1')->name('register');
     Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:20,1')->name('login');
+    Route::post('/forgot-password', [PasswordController::class, 'forgot'])->middleware('throttle:5,1')->name('password.forgot');
+    Route::post('/reset-password', [PasswordController::class, 'reset'])->middleware('throttle:10,1')->name('password.reset');
 
     // ---- Authenticated (Sanctum bearer token) ----
     Route::middleware(['auth:sanctum', 'active'])->group(function () {
@@ -28,6 +36,21 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
         Route::get('/user', [AuthController::class, 'user'])->name('user');
         Route::put('/profile', [AuthController::class, 'updateProfile'])->name('profile.update');
+        Route::post('/profile/photo', [AuthController::class, 'updatePhoto'])->name('profile.photo');
+        Route::get('/dashboard', HomeController::class)->name('dashboard');
+        Route::get('/places', [PlaceController::class, 'index'])->name('places');
+
+        // Push notification device tokens (FCM)
+        Route::post('/device-tokens', [DeviceTokenController::class, 'store'])->name('device-tokens.store');
+        Route::delete('/device-tokens/{token}', [DeviceTokenController::class, 'destroy'])->where('token', '.+')->name('device-tokens.destroy');
+
+        // Documents (private files)
+        Route::get('/documents', [DocumentController::class, 'index'])->name('documents.index');
+        Route::post('/documents', [DocumentController::class, 'store'])->name('documents.store');
+        Route::get('/documents/{document}/file', [DocumentController::class, 'file'])->name('documents.file');
+        Route::get('/vehicles/{vehicle}/documents', [VehicleDocumentController::class, 'index'])->name('vehicles.documents.index');
+        Route::post('/vehicles/{vehicle}/documents', [VehicleDocumentController::class, 'store'])->name('vehicles.documents.store');
+        Route::get('/vehicles/{vehicle}/documents/{document}/file', [VehicleDocumentController::class, 'file'])->name('vehicles.documents.file');
         Route::put('/password', [AuthController::class, 'changePassword'])->name('password.change');
         Route::apiResource('saved-locations', SavedLocationController::class)->only(['index', 'store', 'destroy'])->parameters(['saved-locations' => 'savedLocation']);
 
@@ -81,5 +104,6 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount'])->name('notifications.unread');
         Route::post('/notifications/read-all', [NotificationController::class, 'readAll'])->name('notifications.read-all');
         Route::post('/notifications/{notification}/read', [NotificationController::class, 'read'])->name('notifications.read');
+        Route::delete('/notifications/{notification}', [NotificationController::class, 'destroy'])->name('notifications.destroy');
     });
 });

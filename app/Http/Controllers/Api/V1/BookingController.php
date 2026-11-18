@@ -4,38 +4,41 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Requests\StoreBookingRequest;
 use App\Models\Booking;
+use App\Services\BookingPresenter;
 use App\Services\BookingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class BookingController extends ApiController
 {
-    private const WITH = ['ride.fromCity:id,city_name', 'ride.toCity:id,city_name', 'ride.driver:id,name,phone,gender,profile_image', 'rideOffer.driver:id,name,phone,gender,profile_image', 'passengers', 'payments'];
-
-    public function __construct(private readonly BookingService $bookings)
+    public function __construct(private readonly BookingService $bookings, private readonly BookingPresenter $presenter)
     {
     }
 
     /** Passenger's own bookings. */
     public function index(Request $request): JsonResponse
     {
-        $page = $request->user()->bookings()->with(self::WITH)
+        $page = $this->presenter->query($request->user()->bookings()->getQuery())
             ->when($request->query('status'), fn ($q, $s) => $q->where('booking_status', $s))
             ->latest('booking_date')->paginate($this->perPage());
+
+        $this->presenter->decorate($page->items(), $request->user());
 
         return $this->paginated($page);
     }
 
-    /** Bookings on the driver's rides and accepted offers. */
+    /** Bookings on the driver's rides and accepted offers (passenger stats; phone once confirmed). */
     public function driverBookings(Request $request): JsonResponse
     {
         $id = $request->user()->id;
 
-        $page = Booking::with(array_merge(self::WITH, ['passenger:id,name,phone,gender']))
+        $page = $this->presenter->query(Booking::query(), true)
             ->where(fn ($q) => $q->whereHas('ride', fn ($r) => $r->where('driver_id', $id))
                 ->orWhereHas('rideOffer', fn ($o) => $o->where('driver_id', $id)))
             ->when($request->query('status'), fn ($q, $s) => $q->where('booking_status', $s))
             ->latest('booking_date')->paginate($this->perPage());
+
+        $this->presenter->decorate($page->items(), $request->user(), true);
 
         return $this->paginated($page);
     }
@@ -46,26 +49,30 @@ class BookingController extends ApiController
             $request->user(), $request->integer('ride_id'), $request->integer('seats'), $request->input('passengers', [])
         );
 
-        return $this->created($booking, 'Booking created.');
+        return $this->created($this->presenter->present($booking, $request->user()), 'Booking created.');
     }
 
     public function show(Request $request, Booking $booking): JsonResponse
     {
         $this->assertParticipant($request, $booking);
+        $isDriverView = $booking->passenger_id !== $request->user()->id;
 
-        return $this->ok($booking->load(self::WITH));
+        return $this->ok($this->presenter->present($booking, $request->user(), $isDriverView));
     }
 
     public function confirm(Request $request, Booking $booking): JsonResponse
     {
-        return $this->ok($this->bookings->confirm($booking, $request->user()), 'Booking confirmed.');
+        $booking = $this->bookings->confirm($booking, $request->user());
+
+        return $this->ok($this->presenter->present($booking, $request->user(), true), 'Booking confirmed.');
     }
 
     public function cancel(Request $request, Booking $booking): JsonResponse
     {
         $data = $request->validate(['reason' => ['nullable', 'string', 'max:500']]);
+        $booking = $this->bookings->cancel($booking, $request->user(), $data['reason'] ?? null);
 
-        return $this->ok($this->bookings->cancel($booking, $request->user(), $data['reason'] ?? null)->load('cancellation'), 'Booking cancelled.');
+        return $this->ok($this->presenter->present($booking, $request->user())->load('cancellation'), 'Booking cancelled.');
     }
 
     private function assertParticipant(Request $request, Booking $booking): void

@@ -11,6 +11,7 @@ class UserDocument extends Model
 
     protected $fillable = [
         'user_id', 'document_type', 'document_number', 'document_image', 'expiry_date', 'verification_status',
+        'rejection_reason',
     ];
 
     /** Document numbers (CNIC, licence) are sensitive. */
@@ -18,7 +19,7 @@ class UserDocument extends Model
 
     protected function casts(): array
     {
-        return ['expiry_date' => 'date'];
+        return ['expiry_date' => 'date:Y-m-d'];
     }
 
     public function user(): BelongsTo

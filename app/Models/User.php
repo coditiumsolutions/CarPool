@@ -2,7 +2,12 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -23,6 +28,7 @@ class User extends Authenticatable
     protected $fillable = [
         'name', 'email', 'phone', 'password', 'user_type', 'gender', 'date_of_birth',
         'profile_image', 'city_id', 'address', 'cnic', 'is_verified', 'status',
+        'emergency_contact_name', 'emergency_contact_phone',
     ];
 
     /** CNIC is sensitive: never serialised to JSON/arrays. */
@@ -33,9 +39,76 @@ class User extends Authenticatable
         return [
             'password' => 'hashed',
             'cnic' => 'encrypted',
-            'date_of_birth' => 'date',
+            'date_of_birth' => 'date:Y-m-d',
             'is_verified' => 'boolean',
+            // Aggregates added by the publicProfile()/passengerProfile() scopes.
+            'rating_avg' => 'float',
+            'reviews_count' => 'integer',
+            'completed_rides_count' => 'integer',
+            'completed_bookings_count' => 'integer',
+            'member_since' => 'integer',
         ];
+    }
+
+    /** Stored value may be a relative path (uploaded photo) or a full URL; always return a full URL. */
+    protected function profileImage(): Attribute
+    {
+        return Attribute::get(function (?string $value) {
+            if (! $value) {
+                return null;
+            }
+
+            if (Str::startsWith($value, ['http://', 'https://'])) {
+                return $value;
+            }
+
+            $url = Storage::disk('public')->url($value);
+
+            return Str::startsWith($url, ['http://', 'https://']) ? $url : url($url); // always absolute
+        });
+    }
+
+    private static function memberSinceSql(): string
+    {
+        return DB::connection()->getDriverName() === 'sqlite'
+            ? "CAST(strftime('%Y', users.created_at) AS INTEGER)"
+            : 'YEAR(users.created_at)';
+    }
+
+    private static function ratingSql(): string
+    {
+        return '(SELECT ROUND(COALESCE(AVG(rv.rating), 0), 2) FROM reviews rv WHERE rv.reviewee_id = users.id) AS rating_avg, '
+            .'(SELECT COUNT(*) FROM reviews rv WHERE rv.reviewee_id = users.id) AS reviews_count, '
+            .self::memberSinceSql().' AS member_since';
+    }
+
+    /**
+     * Safe public fields for a driver plus rating_avg, reviews_count,
+     * completed_rides_count and member_since. Use inside with() closures.
+     */
+    public function scopePublicProfile(Builder $query, bool $withPhone = false): Builder
+    {
+        $columns = ['users.id', 'users.name', 'users.gender', 'users.profile_image', 'users.is_verified'];
+        if ($withPhone) {
+            $columns[] = 'users.phone';
+        }
+
+        return $query->select($columns)->selectRaw(
+            self::ratingSql().', '
+            ."(SELECT COUNT(*) FROM rides rd WHERE rd.driver_id = users.id AND rd.ride_status = 'completed') "
+            .'+ (SELECT COUNT(*) FROM bookings bk JOIN ride_offers ro ON ro.id = bk.ride_offer_id '
+            ."WHERE ro.driver_id = users.id AND bk.booking_status = 'completed') AS completed_rides_count"
+        );
+    }
+
+    /** Public fields for a passenger shown to drivers (phone is masked by the caller until confirmed). */
+    public function scopePassengerProfile(Builder $query): Builder
+    {
+        return $query->select(['users.id', 'users.name', 'users.gender', 'users.profile_image', 'users.is_verified', 'users.phone'])
+            ->selectRaw(
+                self::ratingSql().', '
+                ."(SELECT COUNT(*) FROM bookings pb WHERE pb.passenger_id = users.id AND pb.booking_status = 'completed') AS completed_bookings_count"
+            );
     }
 
     /** The users table has no remember_token column, so "remember me" is disabled. */
@@ -139,6 +212,11 @@ class User extends Authenticatable
     public function reviewsReceived(): HasMany
     {
         return $this->hasMany(Review::class, 'reviewee_id');
+    }
+
+    public function deviceTokens(): HasMany
+    {
+        return $this->hasMany(DeviceToken::class);
     }
 
     public function trackingPoints(): HasMany

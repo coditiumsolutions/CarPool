@@ -6,12 +6,15 @@ use App\Http\Requests\StoreRideRequestRequest;
 use App\Models\RideOffer;
 use App\Models\RideRequest;
 use App\Models\Vehicle;
+use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class RideRequestController extends ApiController
 {
     private const WITH = ['passenger:id,name,gender,profile_image', 'fromCity:id,city_name', 'toCity:id,city_name'];
+
+    private const VEHICLE = 'vehicle:id,vehicle_type,make,model,color,model_year,registration_no,total_seats';
 
     /** Open requests that drivers can bid on. */
     public function index(Request $request): JsonResponse
@@ -63,15 +66,17 @@ class RideRequestController extends ApiController
         return $this->ok($rideRequest, 'Request cancelled.');
     }
 
-    /** Passenger views offers received on their request. */
+    /** Passenger views offers received on their request (drivers include rating stats). */
     public function offers(Request $request, RideRequest $rideRequest): JsonResponse
     {
         $rideRequest->passenger_id === $request->user()->id || $this->deny('This is not your request.');
 
-        return $this->ok($rideRequest->offers()->with(['driver:id,name,gender,profile_image,is_verified', 'vehicle:id,vehicle_type,make,model,color,model_year'])->latest()->get());
+        return $this->ok($rideRequest->offers()
+            ->with(['driver' => fn ($q) => $q->publicProfile(), self::VEHICLE])
+            ->latest()->get());
     }
 
-    /** Driver sends an offer on an open request. */
+    /** Driver sends an offer on an open request. `offered_price` is the TOTAL for all seats. */
     public function storeOffer(Request $request, RideRequest $rideRequest): JsonResponse
     {
         $driver = $request->user();
@@ -96,17 +101,23 @@ class RideRequestController extends ApiController
 
         $offer = $rideRequest->offers()->create($data + ['driver_id' => $driver->id, 'offer_status' => 'pending']);
 
-        app(\App\Services\NotificationService::class)->notify(
-            $rideRequest->passenger_id, 'New Offer', "{$driver->name} offered {$data['offered_price']} for your ride request.", 'offer'
+        app(NotificationService::class)->notify(
+            $rideRequest->passenger_id, 'New Offer', "{$driver->name} offered {$data['offered_price']} for your ride request.", 'offer',
+            ['request_id' => $rideRequest->id, 'offer_id' => $offer->id]
         );
 
         return $this->created($offer, 'Offer sent.');
     }
 
-    /** Driver's own offers. */
+    /** Driver's own offers (now with the driver's rating stats too). */
     public function myOffers(Request $request): JsonResponse
     {
-        $page = RideOffer::where('driver_id', $request->user()->id)->with(['request.fromCity:id,city_name', 'request.toCity:id,city_name', 'vehicle:id,make,model,registration_no'])
+        $page = RideOffer::where('driver_id', $request->user()->id)
+            ->with([
+                'request.fromCity:id,city_name', 'request.toCity:id,city_name',
+                self::VEHICLE,
+                'driver' => fn ($q) => $q->publicProfile(),
+            ])
             ->latest()->paginate($this->perPage());
 
         return $this->paginated($page);

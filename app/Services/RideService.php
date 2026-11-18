@@ -22,8 +22,14 @@ class RideService
     /** Bookable rides filtered by the passenger's search criteria. */
     public function search(array $f): Builder
     {
+        $like = fn (string $v) => '%'.str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], mb_strtolower($v)).'%';
+        $sort = $f['sort'] ?? 'earliest';
+
         return Ride::query()
-            ->with(['driver:id,name,gender,profile_image,is_verified', 'vehicle:id,vehicle_type,make,model,color,model_year', 'fromCity:id,city_name', 'toCity:id,city_name', 'stops'])
+            ->with(['driver' => fn ($q) => $q->publicProfile(), 'vehicle:id,vehicle_type,make,model,color,model_year', 'fromCity:id,city_name', 'toCity:id,city_name', 'stops'])
+            ->when($f['from_location'] ?? null, fn ($q, $v) => $q->whereRaw('LOWER(from_location) LIKE ?', [$like($v)]))
+            ->when($f['to_location'] ?? null, fn ($q, $v) => $q->whereRaw('LOWER(to_location) LIKE ?', [$like($v)]))
+            ->when($f['departure_after'] ?? null, fn ($q, $v) => $q->whereTime('departure_datetime', '>=', $v.':00'))
             ->where('ride_status', Ride::STATUS_SCHEDULED)
             ->where('available_seats', '>', 0)
             ->where('departure_datetime', '>', now())
@@ -33,6 +39,10 @@ class RideService
             ->when($f['date'] ?? null, fn ($q, $v) => $q->whereDate('departure_datetime', $v))
             ->when($f['seats'] ?? null, fn ($q, $v) => $q->where('available_seats', '>=', $v))
             ->when($f['max_price'] ?? null, fn ($q, $v) => $q->where('price_per_seat', '<=', $v))
+            ->when($sort === 'price', fn ($q) => $q->orderBy('price_per_seat'))
+            ->when($sort === 'rating', fn ($q) => $q->orderByRaw(
+                '(SELECT COALESCE(AVG(rv.rating), 0) FROM reviews rv WHERE rv.reviewee_id = rides.driver_id) DESC'
+            ))
             ->orderBy('departure_datetime');
     }
 
@@ -99,7 +109,7 @@ class RideService
         $ride->update(['ride_status' => Ride::STATUS_STARTED]);
 
         foreach ($ride->bookings()->where('booking_status', Booking::STATUS_CONFIRMED)->pluck('passenger_id') as $id) {
-            $this->notifications->notify($id, 'Ride Started', "Your ride to {$ride->to_location} has started.", 'ride');
+            $this->notifications->notify($id, 'Ride Started', "Your ride to {$ride->to_location} has started.", 'ride', ['ride_id' => $ride->id]);
         }
 
         return $ride;
@@ -118,7 +128,7 @@ class RideService
 
             $ride->bookings()->where('booking_status', Booking::STATUS_CONFIRMED)->each(function (Booking $b) use ($ride) {
                 $b->update(['booking_status' => Booking::STATUS_COMPLETED]);
-                $this->notifications->notify($b->passenger_id, 'Ride Completed', "Your ride to {$ride->to_location} is complete. Please leave a review.", 'ride');
+                $this->notifications->notify($b->passenger_id, 'Ride Completed', "Your ride to {$ride->to_location} is complete. Please leave a review.", 'ride', ['ride_id' => $ride->id, 'booking_id' => $b->id]);
             });
 
             return $ride;

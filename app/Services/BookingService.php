@@ -67,7 +67,8 @@ class BookingService
                 $ride->driver_id,
                 'New Booking',
                 "{$passenger->name} booked {$seats} seat(s) on your ride to {$ride->to_location}.",
-                'booking'
+                'booking',
+                ['booking_id' => $booking->id, 'ride_id' => $ride->id]
             );
 
             return $booking->load('passengers', 'ride');
@@ -114,7 +115,8 @@ class BookingService
                 $offer->driver_id,
                 'Offer Accepted',
                 "{$passenger->name} accepted your offer for {$request->from_location} to {$request->to_location}.",
-                'booking'
+                'booking',
+                ['booking_id' => $booking->id, 'request_id' => $request->id, 'offer_id' => $offer->id]
             );
 
             return $booking->load('passengers', 'rideOffer');
@@ -131,7 +133,7 @@ class BookingService
         }
 
         $booking->update(['booking_status' => Booking::STATUS_CONFIRMED]);
-        $this->notifications->notify($booking->passenger_id, 'Booking Confirmed', "Your booking #{$booking->id} has been confirmed.", 'booking');
+        $this->notifications->notify($booking->passenger_id, 'Booking Confirmed', "Your booking #{$booking->id} has been confirmed.", 'booking', ['booking_id' => $booking->id, 'ride_id' => $booking->ride_id, 'offer_id' => $booking->ride_offer_id]);
 
         return $booking;
     }
@@ -179,7 +181,7 @@ class BookingService
 
             $other = $isPassenger ? $booking->driverId() : $booking->passenger_id;
             if ($other) {
-                $this->notifications->notify($other, 'Booking Cancelled', "Booking #{$booking->id} was cancelled.", 'booking');
+                $this->notifications->notify($other, 'Booking Cancelled', "Booking #{$booking->id} was cancelled.", 'booking', ['booking_id' => $booking->id, 'ride_id' => $booking->ride_id, 'offer_id' => $booking->ride_offer_id]);
             }
 
             return $booking;

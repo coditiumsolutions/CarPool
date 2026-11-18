@@ -11,7 +11,9 @@ class VehicleController extends ApiController
 {
     public function index(Request $request): JsonResponse
     {
-        return $this->ok($request->user()->vehicles()->latest()->get());
+        $vehicles = $request->user()->vehicles()->with('documents')->latest()->get();
+
+        return $this->ok($vehicles->map(fn ($v) => $this->present($v))->values());
     }
 
     public function store(StoreVehicleRequest $request): JsonResponse
@@ -19,19 +21,19 @@ class VehicleController extends ApiController
         // New vehicles start unverified; an admin verifies them.
         $vehicle = $request->user()->vehicles()->create($request->validated() + ['is_verified' => false, 'status' => 'active']);
 
-        return $this->created($vehicle);
+        return $this->created($this->present($vehicle));
     }
 
     public function show(Request $request, Vehicle $vehicle): JsonResponse
     {
-        return $this->ok($this->owned($request, $vehicle));
+        return $this->ok($this->present($this->owned($request, $vehicle)));
     }
 
     public function update(StoreVehicleRequest $request, Vehicle $vehicle): JsonResponse
     {
         $this->owned($request, $vehicle)->update($request->validated());
 
-        return $this->ok($vehicle->refresh(), 'Vehicle updated.');
+        return $this->ok($this->present($vehicle->refresh()), 'Vehicle updated.');
     }
 
     public function destroy(Request $request, Vehicle $vehicle): JsonResponse
@@ -42,7 +44,7 @@ class VehicleController extends ApiController
             // Keep history intact: deactivate instead of deleting.
             $vehicle->update(['status' => 'inactive']);
 
-            return $this->ok($vehicle, 'Vehicle has ride history, so it was deactivated instead of deleted.');
+            return $this->ok($this->present($vehicle), 'Vehicle has ride history, so it was deactivated instead of deleted.');
         }
 
         $vehicle->delete();
@@ -55,5 +57,11 @@ class VehicleController extends ApiController
         $vehicle->user_id === $request->user()->id || $this->deny('This is not your vehicle.');
 
         return $vehicle;
+    }
+
+    /** Adds verification_status (approved|pending|rejected) and the documents list. */
+    private function present(Vehicle $vehicle): Vehicle
+    {
+        return $vehicle->loadMissing('documents')->append('verification_status');
     }
 }

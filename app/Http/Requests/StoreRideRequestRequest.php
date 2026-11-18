@@ -2,12 +2,16 @@
 
 namespace App\Http\Requests;
 
-use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /** Validation for a passenger's ride request (named to avoid clashing with StoreRideRequest). */
-class StoreRideRequestRequest extends FormRequest
+class StoreRideRequestRequest extends ApiFormRequest
 {
+    protected function authorizationMessage(): string
+    {
+        return 'Only passenger accounts can post ride requests. Switch your account type to both in your profile.';
+    }
+
     public function authorize(): bool
     {
         return (bool) $this->user()?->isPassenger();

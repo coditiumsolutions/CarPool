@@ -20,6 +20,26 @@ class Vehicle extends Model
         return ['is_verified' => 'boolean', 'total_seats' => 'integer'];
     }
 
+    public function documents(): HasMany
+    {
+        return $this->hasMany(VehicleDocument::class);
+    }
+
+    /**
+     * approved  = admin verified the vehicle
+     * rejected  = not verified and a document was rejected
+     * pending   = otherwise (awaiting documents or review)
+     * Requires the `documents` relation to be loaded.
+     */
+    public function getVerificationStatusAttribute(): string
+    {
+        if ($this->is_verified) {
+            return 'approved';
+        }
+
+        return $this->documents->contains('verification_status', 'rejected') ? 'rejected' : 'pending';
+    }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

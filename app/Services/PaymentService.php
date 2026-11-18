@@ -46,7 +46,7 @@ class PaymentService
         ]);
 
         if ($driverId = $booking->driverId()) {
-            $this->notifications->notify($driverId, 'Payment Submitted', "Payment of {$payment->amount} submitted for booking #{$booking->id}.", 'payment');
+            $this->notifications->notify($driverId, 'Payment Submitted', "Payment of {$payment->amount} submitted for booking #{$booking->id}.", 'payment', ['booking_id' => $booking->id]);
         }
 
         return $payment;
@@ -67,7 +67,7 @@ class PaymentService
         return DB::transaction(function () use ($payment, $booking) {
             $payment->update(['payment_status' => 'completed', 'payment_date' => now()]);
             $this->bookings->refreshPaymentStatus($booking);
-            $this->notifications->notify($payment->user_id, 'Payment Confirmed', "Your payment for booking #{$booking->id} was confirmed.", 'payment');
+            $this->notifications->notify($payment->user_id, 'Payment Confirmed', "Your payment for booking #{$booking->id} was confirmed.", 'payment', ['booking_id' => $booking->id]);
 
             return $payment;
         });
